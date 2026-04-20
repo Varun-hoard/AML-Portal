@@ -1,0 +1,368 @@
+{% extends "base.html" %}
+
+{% block title %}Alerts - AML System{% endblock %}
+
+{% block content %}
+<div class="alerts-container">
+    <div class="page-header">
+        <div>
+            <h1>Alerts Management</h1>
+            <div class="filter-chips">
+                <button class="chip" data-filter="all" onclick="filterAlerts('all')">All</button>
+                <button class="chip" data-filter="OPEN" onclick="filterAlerts('OPEN')">Open</button>
+                <button class="chip" data-filter="INVESTIGATING" onclick="filterAlerts('INVESTIGATING')">Investigating</button>
+                <button class="chip" data-filter="RESOLVED" onclick="filterAlerts('RESOLVED')">Resolved</button>
+            </div>
+        </div>
+        <div class="header-actions">
+            <button class="btn-secondary" onclick="exportAlerts()" title="Export alerts to CSV">📥 Export</button>
+            <button class="btn-secondary" onclick="showBulkActions()" title="Bulk update alerts">⚙️ Bulk Actions</button>
+        </div>
+    </div>
+
+    <!-- Bulk Actions Panel -->
+    <div id="bulkActionsPanel" class="card" style="display: none; margin-bottom: 20px;">
+        <div class="bulk-actions">
+            <div>
+                <label>Update Status for Selected:</label>
+                <select id="bulkStatusSelect">
+                    <option value="">-- Select Status --</option>
+                    <option value="OPEN">Open</option>
+                    <option value="INVESTIGATING">Investigating</option>
+                    <option value="RESOLVED">Resolved</option>
+                    <option value="FALSE_POSITIVE">False Positive</option>
+                </select>
+                <button class="btn-primary" onclick="applyBulkUpdate()">Apply</button>
+                <button class="btn-secondary" onclick="hideBulkActions()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Alerts Table -->
+    <div class="card">
+        <table class="alerts-table">
+            <thead>
+                <tr>
+                    <th>Alert ID</th>
+                    <th>Transaction ID</th>
+                    <th>Risk Level</th>
+                    <th>Status</th>
+                    <th>Triggered Rules</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="alertsTable">
+                <tr>
+                    <td colspan="7" class="text-center">Loading alerts...</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination -->
+    <div class="pagination">
+        <button id="prevPage" class="btn-secondary" onclick="previousPage()">Previous</button>
+        <span id="pageInfo">Page 1</span>
+        <button id="nextPage" class="btn-secondary" onclick="nextPage()">Next</button>
+    </div>
+
+    <!-- Alert Details Modal -->
+    <div id="alertDetailsModal" class="modal">
+        <div class="modal-content modal-wide">
+            <div class="modal-header">
+                <h2>Alert Details</h2>
+                <button class="modal-close" onclick="closeDetailsModal()">&times;</button>
+            </div>
+            <div id="alertDetails" class="alert-details">
+                <!-- Will be populated by JavaScript -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentPage = 1;
+let currentFilter = 'all';
+
+document.addEventListener('DOMContentLoaded', () => {
+    loadAlerts();
+});
+
+async function loadAlerts() {
+    try {
+        const url = `/api/alerts?page=${currentPage}&per_page=15`;
+        const response = await fetch(url);
+        const data = await response.json();
+
+        const tbody = document.getElementById('alertsTable');
+        
+        if (data.alerts.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center">No alerts found</td></tr>';
+            return;
+        }
+
+        let filteredAlerts = data.alerts;
+        
+        if (currentFilter !== 'all') {
+            filteredAlerts = filteredAlerts.filter(alert => alert.status === currentFilter);
+        }
+
+        if (filteredAlerts.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center">No alerts found for selected filter</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = filteredAlerts.map(alert => `
+            <tr class="alert-row alert-row-${alert.risk_level.toLowerCase()}">
+                <td><code>#${alert.id}</code></td>
+                <td>${alert.transaction_id}</td>
+                <td><span class="risk-badge risk-${alert.risk_level.toLowerCase()}">${alert.risk_level}</span></td>
+                <td><span class="status-badge status-${alert.status.toLowerCase()}">${alert.status}</span></td>
+                <td>
+                    <div class="rules-list">
+                        ${alert.triggered_rules.map(rule => `<span class="rule-tag">${rule}</span>`).join('')}
+                    </div>
+                </td>
+                <td>${new Date(alert.created_at).toLocaleDateString()}</td>
+                <td><button class="btn-small" onclick="viewAlert(${alert.id})">Review</button></td>
+            </tr>
+        `).join('');
+
+        // Update pagination
+        document.getElementById('pageInfo').textContent = `Page ${data.current_page} of ${data.pages}`;
+        document.getElementById('prevPage').disabled = currentPage === 1;
+        document.getElementById('nextPage').disabled = currentPage === data.pages;
+    } catch (error) {
+        console.error('Error loading alerts:', error);
+    }
+}
+
+async function viewAlert(alertId) {
+    try {
+        const response = await fetch(`/api/alerts/${alertId}`);
+        const alert = await response.json();
+
+        const detailsDiv = document.getElementById('alertDetails');
+        detailsDiv.innerHTML = `
+            <div class="details-form">
+                <div class="details-grid">
+                    <div class="detail-item">
+                        <label>Alert ID</label>
+                        <p>${alert.id}</p>
+                    </div>
+                    <div class="detail-item">
+                        <label>Transaction ID</label>
+                        <p>${alert.transaction_id}</p>
+                    </div>
+                    <div class="detail-item">
+                        <label>Risk Level</label>
+                        <p><span class="risk-badge risk-${alert.risk_level.toLowerCase()}">${alert.risk_level}</span></p>
+                    </div>
+                    <div class="detail-item">
+                        <label>Status</label>
+                        <select id="alertStatus" onchange="updateAlertStatus(${alert.id}, this.value)">
+                            <option value="OPEN" ${alert.status === 'OPEN' ? 'selected' : ''}>Open</option>
+                            <option value="INVESTIGATING" ${alert.status === 'INVESTIGATING' ? 'selected' : ''}>Investigating</option>
+                            <option value="RESOLVED" ${alert.status === 'RESOLVED' ? 'selected' : ''}>Resolved</option>
+                            <option value="FALSE_POSITIVE" ${alert.status === 'FALSE_POSITIVE' ? 'selected' : ''}>False Positive</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="detail-item full-width">
+                    <label>Triggered Rules</label>
+                    <div style="margin-top: 8px;">
+                        ${alert.triggered_rules.map(rule => `<span class="rule-tag">${rule}</span>`).join('')}
+                    </div>
+                </div>
+
+                <div class="detail-item full-width">
+                    <label>Analyst Notes</label>
+                    <textarea id="analystNotes" placeholder="Add investigation notes..." rows="4">${alert.analyst_notes || ''}</textarea>
+                </div>
+
+                <div class="form-actions">
+                    <button class="btn-primary" onclick="saveAlertNotes(${alert.id})">Save Notes</button>
+                    <button class="btn-secondary" onclick="closeDetailsModal()">Close</button>
+                </div>
+            </div>
+        `;
+
+        document.getElementById('alertDetailsModal').style.display = 'flex';
+    } catch (error) {
+        console.error('Error fetching alert details:', error);
+    }
+}
+
+async function updateAlertStatus(alertId, status) {
+    try {
+        const response = await fetch(`/api/alerts/${alertId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                status: status
+            })
+        });
+
+        if (response.ok) {
+            loadAlerts();
+        }
+    } catch (error) {
+        console.error('Error updating alert:', error);
+    }
+}
+
+async function saveAlertNotes(alertId) {
+    try {
+        const notes = document.getElementById('analystNotes').value;
+        const response = await fetch(`/api/alerts/${alertId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                analyst_notes: notes
+            })
+        });
+
+        if (response.ok) {
+            alert('Notes saved successfully');
+            loadAlerts();
+        }
+    } catch (error) {
+        console.error('Error saving notes:', error);
+    }
+}
+
+function closeDetailsModal() {
+    document.getElementById('alertDetailsModal').style.display = 'none';
+}
+
+function previousPage() {
+    if (currentPage > 1) {
+        currentPage--;
+        loadAlerts();
+    }
+}
+
+function nextPage() {
+    currentPage++;
+    loadAlerts();
+}
+
+// NEW FUNCTIONALITY: Export alerts to CSV
+async function exportAlerts() {
+    try {
+        const response = await fetch('/api/export/alerts');
+        if (response.ok) {
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `alerts_${new Date().toISOString().split('T')[0]}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            showToast('Alerts exported successfully', 'success');
+        } else {
+            showToast('Failed to export alerts', 'error');
+        }
+    } catch (error) {
+        console.error('Error exporting alerts:', error);
+        showToast('Error exporting alerts', 'error');
+    }
+}
+
+// NEW FUNCTIONALITY: Show bulk actions panel
+function showBulkActions() {
+    document.getElementById('bulkActionsPanel').style.display = 'block';
+    document.getElementById('bulkActionsPanel').scrollIntoView({ behavior: 'smooth' });
+}
+
+function hideBulkActions() {
+    document.getElementById('bulkActionsPanel').style.display = 'none';
+}
+
+// NEW FUNCTIONALITY: Apply bulk update to selected alerts
+async function applyBulkUpdate() {
+    const status = document.getElementById('bulkStatusSelect').value;
+    
+    if (!status) {
+        showToast('Please select a status', 'error');
+        return;
+    }
+    
+    // Get all alert IDs
+    const allAlerts = document.querySelectorAll('.alert-row');
+    const alertIds = Array.from(allAlerts).map(row => {
+        const idCell = row.querySelector('td:first-child');
+        const idText = idCell.textContent.replace('#', '');
+        return parseInt(idText);
+    });
+    
+    if (alertIds.length === 0) {
+        showToast('No alerts to update', 'error');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/alerts/bulk-update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                alert_ids: alertIds,
+                update_data: { status: status }
+            })
+        });
+        
+        if (response.ok) {
+            const result = await response.json();
+            showToast(`Updated ${result.updated_count} alerts successfully`, 'success');
+            hideBulkActions();
+            document.getElementById('bulkStatusSelect').value = '';
+            loadAlerts();
+        } else {
+            showToast('Failed to update alerts', 'error');
+        }
+    } catch (error) {
+        console.error('Error in bulk update:', error);
+        showToast('Error updating alerts', 'error');
+    }
+}
+
+// Helper function for toast notifications
+function showToast(message, type = 'info') {
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.textContent = message;
+    toast.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        padding: 1rem 1.5rem;
+        background: ${type === 'success' ? '#27ae60' : type === 'error' ? '#e74c3c' : '#3498db'};
+        color: white;
+        border-radius: 4px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        z-index: 10000;
+        animation: slideIn 0.3s ease;
+    `;
+    
+    document.body.appendChild(toast);
+    
+    setTimeout(() => {
+        toast.remove();
+    }, 3000);
+}
+
+function filterAlerts(filter) {
+    currentFilter = filter;
+    currentPage = 1;
+    document.querySelectorAll('.chip').forEach(chip => {
+        chip.classList.remove('active');
+    });
+    document.querySelector(`[data-filter="${filter}"]`).classList.add('active');
+    loadAlerts();
+}
+</script>
+{% endblock %}

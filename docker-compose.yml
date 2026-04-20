@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  aml-system:
+    build: .
+    container_name: aml-system-sprint1
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_APP=app.py
+      - FLASK_ENV=production
+      - SECRET_KEY=your-secret-key-change-in-production
+      - DATABASE_URL=sqlite:///aml_system.db
+    volumes:
+      - ./aml_system.db:/app/aml_system.db
+      - ./logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - aml-network
+
+networks:
+  aml-network:
+    driver: bridge

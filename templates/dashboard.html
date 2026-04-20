@@ -1,0 +1,272 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - AML System{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+    <h1>Dashboard</h1>
+    <p class="subtitle">System Overview & Fraud Detection Summary</p>
+
+    <!-- Stats Grid -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-icon yellow">
+                <i class="fas fa-exchange-alt"></i>
+            </div>
+            <div class="stat-content">
+                <h3>Total Transactions</h3>
+                <p class="stat-value" id="totalTransactions">-</p>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon red">
+                <i class="fas fa-exclamation-triangle"></i>
+            </div>
+            <div class="stat-content">
+                <h3>Suspicious Transactions</h3>
+                <p class="stat-value" id="suspiciousTransactions">-</p>
+                <p class="stat-percentage" id="suspiciousPercentage">-</p>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon blue">
+                <i class="fas fa-bell"></i>
+            </div>
+            <div class="stat-content">
+                <h3>Open Alerts</h3>
+                <p class="stat-value" id="openAlerts">-</p>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon green">
+                <i class="fas fa-dollar-sign"></i>
+            </div>
+            <div class="stat-content">
+                <h3>Total Amount (USD)</h3>
+                <p class="stat-value" id="totalAmount">-</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Risk Distribution & Quick Actions -->
+    <div class="dashboard-grid">
+        <div class="card">
+            <h2>Risk Distribution</h2>
+            <div id="riskChart" class="risk-distribution">
+                <!-- Will be populated by JavaScript -->
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Quick Actions</h2>
+            <div class="quick-actions">
+                <a href="/transactions" class="btn-secondary">
+                    <i class="fas fa-list"></i>
+                    View Transactions
+                </a>
+                <a href="/alerts" class="btn-secondary">
+                    <i class="fas fa-bell"></i>
+                    View Alerts
+                </a>
+                <button id="btnAddTransaction" class="btn-primary">
+                    <i class="fas fa-plus"></i>
+                    Add Transaction
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Transaction Entry Modal -->
+    <div id="transactionModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Add New Transaction</h2>
+                <button class="modal-close" onclick="closeTransactionModal()">&times;</button>
+            </div>
+            <form id="transactionForm" onsubmit="handleAddTransaction(event)">
+                <div class="form-group">
+                    <label for="senderAccount">Sender Account</label>
+                    <input type="text" id="senderAccount" name="senderAccount" required placeholder="e.g., ACC-12345">
+                </div>
+                <div class="form-group">
+                    <label for="receiverAccount">Receiver Account</label>
+                    <input type="text" id="receiverAccount" name="receiverAccount" required placeholder="e.g., ACC-67890">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="amount">Amount</label>
+                        <input type="number" id="amount" name="amount" required step="0.01" min="0" placeholder="0.00">
+                    </div>
+                    <div class="form-group">
+                        <label for="currency">Currency</label>
+                        <select id="currency" name="currency">
+                            <option value="USD">USD</option>
+                            <option value="EUR">EUR</option>
+                            <option value="GBP">GBP</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="transactionDate">Transaction Date</label>
+                    <input type="datetime-local" id="transactionDate" name="transactionDate" required>
+                </div>
+                <div id="transactionError" class="alert alert-danger" style="display: none;"></div>
+                <div class="form-actions">
+                    <button type="submit" class="btn-primary">Submit Transaction</button>
+                    <button type="button" class="btn-secondary" onclick="closeTransactionModal()">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Recent Suspicious Transactions -->
+    <div class="card">
+        <h2>Recent Alerts (Last 5)</h2>
+        <div id="recentAlerts" class="recent-list">
+            <!-- Will be populated by JavaScript -->
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    loadDashboardStats();
+    loadRecentAlerts();
+    setCurrentDateTime();
+    document.getElementById('btnAddTransaction').addEventListener('click', openTransactionModal);
+});
+
+async function loadDashboardStats() {
+    try {
+        const response = await fetch('/api/dashboard/stats');
+        const data = await response.json();
+
+        document.getElementById('totalTransactions').textContent = data.total_transactions;
+        document.getElementById('suspiciousTransactions').textContent = data.suspicious_transactions;
+        document.getElementById('suspiciousPercentage').textContent = `(${data.suspicious_percentage}%)`;
+        document.getElementById('openAlerts').textContent = data.open_alerts;
+        document.getElementById('totalAmount').textContent = `$${data.total_amount.toLocaleString()}`;
+
+        // Populate risk distribution
+        const riskChart = document.getElementById('riskChart');
+        riskChart.innerHTML = '';
+
+        const risks = [
+            { level: 'LOW', count: data.risk_distribution.LOW, color: '#27ae60' },
+            { level: 'MEDIUM', count: data.risk_distribution.MEDIUM, color: '#f39c12' },
+            { level: 'HIGH', count: data.risk_distribution.HIGH, color: '#e74c3c' },
+            { level: 'CRITICAL', count: data.risk_distribution.CRITICAL, color: '#c0392b' }
+        ];
+
+        risks.forEach(risk => {
+            const bar = document.createElement('div');
+            bar.className = 'risk-bar';
+            bar.innerHTML = `
+                <div class="risk-label">
+                    <span>${risk.level}</span>
+                    <strong>${risk.count}</strong>
+                </div>
+                <div class="risk-progress">
+                    <div style="width: ${Math.min(100, (risk.count / Math.max(...risks.map(r => r.count), 1)) * 100)}%; background-color: ${risk.color};"></div>
+                </div>
+            `;
+            riskChart.appendChild(bar);
+        });
+    } catch (error) {
+        console.error('Error loading dashboard stats:', error);
+    }
+}
+
+async function loadRecentAlerts() {
+    try {
+        const response = await fetch('/api/alerts?per_page=5');
+        const data = await response.json();
+
+        const alertsDiv = document.getElementById('recentAlerts');
+        if (data.alerts.length === 0) {
+            alertsDiv.innerHTML = '<p class="empty-state">No alerts yet</p>';
+            return;
+        }
+
+        alertsDiv.innerHTML = data.alerts.map(alert => `
+            <div class="alert-item alert-${alert.risk_level.toLowerCase()}">
+                <div class="alert-left">
+                    <span class="alert-badge">${alert.risk_level}</span>
+                    <div class="alert-info">
+                        <p><strong>Alert #${alert.id}</strong></p>
+                        <p>Transaction ID: ${alert.transaction_id}</p>
+                    </div>
+                </div>
+                <div class="alert-right">
+                    <span class="alert-status">${alert.status}</span>
+                    <p class="alert-time">${new Date(alert.created_at).toLocaleString()}</p>
+                </div>
+            </div>
+        `).join('');
+    } catch (error) {
+        console.error('Error loading alerts:', error);
+    }
+}
+
+function setCurrentDateTime() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    document.getElementById('transactionDate').value = `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+function openTransactionModal() {
+    document.getElementById('transactionModal').style.display = 'flex';
+}
+
+function closeTransactionModal() {
+    document.getElementById('transactionModal').style.display = 'none';
+    document.getElementById('transactionForm').reset();
+    document.getElementById('transactionError').style.display = 'none';
+}
+
+async function handleAddTransaction(event) {
+    event.preventDefault();
+    const errorDiv = document.getElementById('transactionError');
+    errorDiv.style.display = 'none';
+
+    try {
+        const response = await fetch('/api/transactions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                sender_account: document.getElementById('senderAccount').value,
+                receiver_account: document.getElementById('receiverAccount').value,
+                amount: parseFloat(document.getElementById('amount').value),
+                currency: document.getElementById('currency').value,
+                transaction_date: document.getElementById('transactionDate').value
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            closeTransactionModal();
+            loadDashboardStats();
+            loadRecentAlerts();
+            alert('Transaction created successfully!' + (data.alert ? '\nAlert generated: ' + data.alert.risk_level : ''));
+        } else {
+            errorDiv.textContent = data.error || 'Error creating transaction';
+            errorDiv.style.display = 'block';
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        errorDiv.textContent = 'An error occurred';
+        errorDiv.style.display = 'block';
+    }
+}
+
+window.closeTransactionModal = closeTransactionModal;
+</script>
+{% endblock %}

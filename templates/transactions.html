@@ -1,0 +1,337 @@
+{% extends "base.html" %}
+
+{% block title %}Transactions - AML System{% endblock %}
+
+{% block content %}
+<div class="transactions-container">
+    <div class="page-header">
+        <h1>Transactions</h1>
+        <div class="header-actions">
+            <button class="btn-secondary" onclick="exportTransactions()" title="Export transactions to CSV">📥 Export</button>
+            <button id="btnAddTransaction" class="btn-primary">
+                <i class="fas fa-plus"></i>
+                New Transaction
+            </button>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="filters">
+        <div class="filter-group">
+            <label for="filterSuspicious">
+                <input type="checkbox" id="filterSuspicious" name="filterSuspicious">
+                Show Suspicious Only
+            </label>
+        </div>
+        <div class="filter-group">
+            <input type="text" id="searchBox" class="search-input" placeholder="Search by account number...">
+        </div>
+    </div>
+
+    <!-- Transactions Table -->
+    <div class="card">
+        <table class="transactions-table">
+            <thead>
+                <tr>
+                    <th>Transaction ID</th>
+                    <th>Sender</th>
+                    <th>Receiver</th>
+                    <th>Amount</th>
+                    <th>Date</th>
+                    <th>Status</th>
+                    <th>Risk Level</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="transactionsTable">
+                <tr>
+                    <td colspan="8" class="text-center">Loading transactions...</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination -->
+    <div class="pagination">
+        <button id="prevPage" class="btn-secondary" onclick="previousPage()">Previous</button>
+        <span id="pageInfo">Page 1</span>
+        <button id="nextPage" class="btn-secondary" onclick="nextPage()">Next</button>
+    </div>
+
+    <!-- Transaction Details Modal -->
+    <div id="transactionDetailsModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Transaction Details</h2>
+                <button class="modal-close" onclick="closeDetailsModal()">&times;</button>
+            </div>
+            <div id="transactionDetails" class="transaction-details">
+                <!-- Will be populated by JavaScript -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Transaction Modal -->
+    <div id="transactionModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Add New Transaction</h2>
+                <button class="modal-close" onclick="closeTransactionModal()">&times;</button>
+            </div>
+            <form id="transactionForm" onsubmit="handleAddTransaction(event)">
+                <div class="form-group">
+                    <label for="senderAccount">Sender Account</label>
+                    <input type="text" id="senderAccount" name="senderAccount" required placeholder="e.g., ACC-12345">
+                </div>
+                <div class="form-group">
+                    <label for="receiverAccount">Receiver Account</label>
+                    <input type="text" id="receiverAccount" name="receiverAccount" required placeholder="e.g., ACC-67890">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="amount">Amount</label>
+                        <input type="number" id="amount" name="amount" required step="0.01" min="0" placeholder="0.00">
+                    </div>
+                    <div class="form-group">
+                        <label for="currency">Currency</label>
+                        <select id="currency" name="currency">
+                            <option value="USD">USD</option>
+                            <option value="EUR">EUR</option>
+                            <option value="GBP">GBP</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="transactionDate">Transaction Date</label>
+                    <input type="datetime-local" id="transactionDate" name="transactionDate" required>
+                </div>
+                <div id="transactionError" class="alert alert-danger" style="display: none;"></div>
+                <div class="form-actions">
+                    <button type="submit" class="btn-primary">Submit Transaction</button>
+                    <button type="button" class="btn-secondary" onclick="closeTransactionModal()">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentPage = 1;
+let isSuspiciousOnly = false;
+
+document.addEventListener('DOMContentLoaded', () => {
+    loadTransactions();
+    setCurrentDateTime();
+    document.getElementById('btnAddTransaction').addEventListener('click', openTransactionModal);
+    document.getElementById('filterSuspicious').addEventListener('change', (e) => {
+        isSuspiciousOnly = e.target.checked;
+        currentPage = 1;
+        loadTransactions();
+    });
+});
+
+async function loadTransactions() {
+    try {
+        const url = `/api/transactions?page=${currentPage}&per_page=15&suspicious=${isSuspiciousOnly}`;
+        const response = await fetch(url);
+        const data = await response.json();
+
+        const tbody = document.getElementById('transactionsTable');
+        
+        if (data.transactions.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center">No transactions found</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = data.transactions.map(txn => `
+            <tr class="${txn.is_suspicious ? 'row-suspicious' : ''}">
+                <td><code>${txn.transaction_id}</code></td>
+                <td>${txn.sender_account}</td>
+                <td>${txn.receiver_account}</td>
+                <td>$${txn.amount.toLocaleString()}</td>
+                <td>${new Date(txn.transaction_date).toLocaleDateString()}</td>
+                <td><span class="badge ${txn.is_suspicious ? 'badge-danger' : 'badge-success'}">${txn.is_suspicious ? 'Suspicious' : 'Normal'}</span></td>
+                <td><span class="risk-badge risk-${txn.risk_level.toLowerCase()}">${txn.risk_level}</span></td>
+                <td><button class="btn-small" onclick="viewDetails(${txn.id})">View</button></td>
+            </tr>
+        `).join('');
+
+        // Update pagination
+        document.getElementById('pageInfo').textContent = `Page ${data.current_page} of ${data.pages}`;
+        document.getElementById('prevPage').disabled = currentPage === 1;
+        document.getElementById('nextPage').disabled = currentPage === data.pages;
+    } catch (error) {
+        console.error('Error loading transactions:', error);
+    }
+}
+
+async function viewDetails(transactionId) {
+    try {
+        const response = await fetch(`/api/transactions/${transactionId}`);
+        const txn = await response.json();
+
+        const detailsDiv = document.getElementById('transactionDetails');
+        detailsDiv.innerHTML = `
+            <div class="details-grid">
+                <div class="detail-item">
+                    <label>Transaction ID</label>
+                    <p>${txn.transaction_id}</p>
+                </div>
+                <div class="detail-item">
+                    <label>Sender Account</label>
+                    <p>${txn.sender_account}</p>
+                </div>
+                <div class="detail-item">
+                    <label>Receiver Account</label>
+                    <p>${txn.receiver_account}</p>
+                </div>
+                <div class="detail-item">
+                    <label>Amount</label>
+                    <p>${txn.currency} ${txn.amount.toLocaleString()}</p>
+                </div>
+                <div class="detail-item">
+                    <label>Transaction Date</label>
+                    <p>${new Date(txn.transaction_date).toLocaleString()}</p>
+                </div>
+                <div class="detail-item">
+                    <label>Status</label>
+                    <p><span class="badge ${txn.is_suspicious ? 'badge-danger' : 'badge-success'}">${txn.is_suspicious ? 'Suspicious' : 'Normal'}</span></p>
+                </div>
+                <div class="detail-item">
+                    <label>Risk Level</label>
+                    <p><span class="risk-badge risk-${txn.risk_level.toLowerCase()}">${txn.risk_level}</span></p>
+                </div>
+                ${txn.detection_reason ? `<div class="detail-item full-width"><label>Detection Reason</label><p>${txn.detection_reason}</p></div>` : ''}
+                <div class="detail-item full-width">
+                    <label>Created At</label>
+                    <p>${new Date(txn.created_at).toLocaleString()}</p>
+                </div>
+            </div>
+        `;
+        document.getElementById('transactionDetailsModal').style.display = 'flex';
+    } catch (error) {
+        console.error('Error fetching transaction details:', error);
+    }
+}
+
+function closeDetailsModal() {
+    document.getElementById('transactionDetailsModal').style.display = 'none';
+}
+
+function previousPage() {
+    if (currentPage > 1) {
+        currentPage--;
+        loadTransactions();
+    }
+}
+
+function nextPage() {
+    currentPage++;
+    loadTransactions();
+}
+
+function setCurrentDateTime() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    document.getElementById('transactionDate').value = `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+function openTransactionModal() {
+    document.getElementById('transactionModal').style.display = 'flex';
+}
+
+function closeTransactionModal() {
+    document.getElementById('transactionModal').style.display = 'none';
+    document.getElementById('transactionForm').reset();
+    document.getElementById('transactionError').style.display = 'none';
+}
+
+async function handleAddTransaction(event) {
+    event.preventDefault();
+    const errorDiv = document.getElementById('transactionError');
+    errorDiv.style.display = 'none';
+
+    try {
+        const response = await fetch('/api/transactions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                sender_account: document.getElementById('senderAccount').value,
+                receiver_account: document.getElementById('receiverAccount').value,
+                amount: parseFloat(document.getElementById('amount').value),
+                currency: document.getElementById('currency').value,
+                transaction_date: document.getElementById('transactionDate').value
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            closeTransactionModal();
+            currentPage = 1;
+            loadTransactions();
+            alert('Transaction created successfully!' + (data.alert ? '\nAlert generated: ' + data.alert.risk_level : ''));
+        } else {
+            errorDiv.textContent = data.error || 'Error creating transaction';
+            errorDiv.style.display = 'block';
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        errorDiv.textContent = 'An error occurred';
+        errorDiv.style.display = 'block';
+    }
+}
+
+// NEW FUNCTIONALITY: Export transactions to CSV
+async function exportTransactions() {
+    try {
+        const response = await fetch('/api/export/transactions');
+        if (response.ok) {
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `transactions_${new Date().toISOString().split('T')[0]}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            showToast('Transactions exported successfully', 'success');
+        } else {
+            showToast('Failed to export transactions', 'error');
+        }
+    } catch (error) {
+        console.error('Error exporting transactions:', error);
+        showToast('Error exporting transactions', 'error');
+    }
+}
+
+function showToast(message, type = 'info') {
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.textContent = message;
+    toast.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        padding: 1rem 1.5rem;
+        background: ${type === 'success' ? '#27ae60' : type === 'error' ? '#e74c3c' : '#3498db'};
+        color: white;
+        border-radius: 4px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        z-index: 10000;
+        animation: slideIn 0.3s ease;
+    `;
+    
+    document.body.appendChild(toast);
+    
+    setTimeout(() => {
+        toast.remove();
+    }, 3000);
+}
+</script>
+{% endblock %}
