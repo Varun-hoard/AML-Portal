@@ -19,7 +19,7 @@ from flask import (
     url_for,
     send_file,
 )
-from flask_sqlalchemy import SQLAlchemy
+from flask_sqlalchemy import SQLAlchemy  # type: ignore[import-untyped]
 from werkzeug.security import generate_password_hash, check_password_hash
 from dotenv import load_dotenv
 import logging
@@ -472,7 +472,7 @@ def create_transaction():
                 {
                     "message": "Transaction created successfully",
                     "transaction": transaction.to_dict(),
-                    "alert": alert.to_dict() if is_suspicious else None,
+                    "alert": alert.to_dict() if alert is not None else None,
                 }
             ),
             201,
