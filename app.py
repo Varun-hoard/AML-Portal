@@ -235,6 +235,17 @@ def get_current_user():
     return jsonify({'error': 'User not found'}), 404
 
 
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    """Health heartbeat endpoint"""
+    try:
+        # Check DB connection
+        db.session.execute(db.text('SELECT 1'))
+        return jsonify({'status': 'healthy', 'database': 'connected', 'timestamp': datetime.utcnow().isoformat()}), 200
+    except Exception as e:
+        return jsonify({'status': 'unhealthy', 'error': str(e), 'timestamp': datetime.utcnow().isoformat()}), 503
+
+
 # ======================== Detection Rules ========================
 
 class FraudDetectionEngine:
