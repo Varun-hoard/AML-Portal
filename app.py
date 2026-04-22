@@ -150,6 +150,9 @@ def register():
         # Validation
         if not data or not data.get('username') or not data.get('password') or not data.get('email'):
             return jsonify({'error': 'Missing required fields'}), 400
+            
+        if len(data.get('password', '')) < 6:
+            return jsonify({'error': 'Password must be at least 6 characters long'}), 400
         
         # Check if user exists
         if User.query.filter_by(username=data['username']).first():
