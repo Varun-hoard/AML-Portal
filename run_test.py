@@ -16,25 +16,25 @@ import json
 def setup_test_environment():
     """Set up test database with dummy data"""
     print("\n" + "="*60)
-    print("🧪 AML SYSTEM - TEST ENVIRONMENT SETUP")
+    print(" AML SYSTEM - TEST ENVIRONMENT SETUP")
     print("="*60)
     
     with app.app_context():
         # Create all tables
-        print("\n📦 Creating database tables...")
+        print("\n Creating database tables...")
         db.create_all()
-        print("   ✅ Tables created")
+        print("    Tables created")
         
         # Clear existing data
-        print("\n🗑️  Clearing any existing test data...")
+        print("\n  Clearing any existing test data...")
         Alert.query.delete()
         Transaction.query.delete()
         User.query.delete()
         db.session.commit()
-        print("   ✅ Database cleared")
+        print("    Database cleared")
         
         # Create test users
-        print("\n👥 Creating test users...")
+        print("\n Creating test users...")
         for user_data in DUMMY_USERS:
             user = User(
                 username=user_data['username'],
@@ -55,10 +55,10 @@ def setup_test_environment():
         admin.set_password('admin123')
         db.session.add(admin)
         db.session.commit()
-        print(f"   ✅ Created {len(DUMMY_USERS) + 1} test users")
+        print(f"    Created {len(DUMMY_USERS) + 1} test users")
         
         # Generate and add dummy transactions
-        print("\n💰 Generating 150 dummy transactions...")
+        print("\n Generating 150 dummy transactions...")
         transactions_data = generate_dummy_data(150)
         
         for idx, txn_data in enumerate(transactions_data, 1):
@@ -101,11 +101,11 @@ def setup_test_environment():
                 db.session.add(alert)
         
         db.session.commit()
-        print(f"   ✅ Created {len(transactions_data)} transactions")
+        print(f"    Created {len(transactions_data)} transactions")
         
         # Print statistics
         print("\n" + "="*60)
-        print("📊 DATABASE STATISTICS")
+        print(" DATABASE STATISTICS")
         print("="*60)
         
         total_users = User.query.count()
@@ -132,7 +132,7 @@ def setup_test_environment():
                 print(f"  {risk:<10} {count:>4} ({pct:>5.1f}%)")
         
         print("\n" + "="*60)
-        print("🔐 TEST CREDENTIALS")
+        print(" TEST CREDENTIALS")
         print("="*60)
         print("\nAdmin Account:")
         print("  Username: admin")
@@ -142,9 +142,9 @@ def setup_test_environment():
             print(f"  {user['username']:<20} / {user['password']}")
         
         print("\n" + "="*60)
-        print("✅ TEST ENVIRONMENT READY!")
+        print(" TEST ENVIRONMENT READY!")
         print("="*60)
-        print("\n🚀 Starting Flask application on http://localhost:5000")
+        print("\n Starting Flask application on http://localhost:5000")
         print("   Press Ctrl+C to stop the server\n")
 
 
@@ -160,8 +160,8 @@ if __name__ == '__main__':
             use_reloader=True
         )
     except KeyboardInterrupt:
-        print("\n\n⛔ Server stopped")
+        print("\n\n Server stopped")
         sys.exit(0)
     except Exception as e:
-        print(f"\n❌ Error: {str(e)}")
+        print(f"\n Error: {str(e)}")
         sys.exit(1)
