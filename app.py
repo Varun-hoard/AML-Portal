@@ -339,8 +339,8 @@ def create_transaction():
         
         try:
             transaction_date = datetime.fromisoformat(data['transaction_date'].replace('Z', '+00:00'))
-        except:
-            return jsonify({'error': 'Invalid transaction date'}), 400
+        except ValueError as e:
+            return jsonify({'error': f'Invalid transaction date format: {str(e)}'}), 400
         
         # Check for duplicate transaction
         transaction_id = f"TXN-{int(datetime.utcnow().timestamp())}-{data['sender_account'][-4:]}"
